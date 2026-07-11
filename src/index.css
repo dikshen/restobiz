@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.amber.500");
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  /* Signature element: a kitchen-ticket perforation, used to divide
+     card image/body and cart line items — echoes a printed order chit. */
+  .ticket-perf {
+    position: relative;
+  }
+  .ticket-perf::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      theme("colors.line") 0,
+      theme("colors.line") 6px,
+      transparent 6px,
+      transparent 12px
+    );
+    background-size: 12px 1px;
+  }
+  .ticket-notch::before,
+  .ticket-notch::after {
+    content: "";
+    position: absolute;
+    top: -1px;
+    width: 12px;
+    height: 12px;
+    background: theme("colors.paper");
+    border-radius: 999px;
+  }
+  .ticket-notch::before {
+    left: -6px;
+  }
+  .ticket-notch::after {
+    right: -6px;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
