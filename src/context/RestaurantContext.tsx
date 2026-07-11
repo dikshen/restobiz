@@ -3,10 +3,10 @@ import { Outlet, useParams } from "react-router-dom";
 import {
   getCategoriesForRestaurant,
   getCouponsForRestaurant,
-  getMenuItemsForRestaurant,
   getRestaurantBySlug,
   getTablesForRestaurant,
 } from "@/data/mockData";
+import { useMenuStore } from "@/store/menuStore";
 import type { Category, Coupon, MenuItem, Restaurant, RestaurantTable } from "@/types";
 
 interface RestaurantScope {
@@ -41,6 +41,7 @@ export function useRestaurant(): RestaurantScope {
  */
 export function RestaurantScopeLayout() {
   const { slug } = useParams<{ slug: string }>();
+  const allMenuItems = useMenuStore((s) => s.items);
 
   const scope = useMemo<RestaurantScope | null>(() => {
     if (!slug) return null;
@@ -49,11 +50,11 @@ export function RestaurantScopeLayout() {
     return {
       restaurant,
       categories: getCategoriesForRestaurant(restaurant.id),
-      menuItems: getMenuItemsForRestaurant(restaurant.id),
+      menuItems: allMenuItems.filter((item) => item.restaurantId === restaurant.id),
       tables: getTablesForRestaurant(restaurant.id),
       coupons: getCouponsForRestaurant(restaurant.id),
     };
-  }, [slug]);
+  }, [slug, allMenuItems]);
 
   if (!scope) {
     return <RestaurantNotFound slug={slug} />;

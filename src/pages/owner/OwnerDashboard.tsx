@@ -1,11 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ClipboardList,
   IndianRupee,
   LogOut,
+  Pencil,
+  Plus,
   Store,
   Users,
-  UtensilsCrossed,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,13 +14,14 @@ import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
 import {
   getCategoriesForRestaurant,
-  getMenuItemsForRestaurant,
   getStaffForRestaurant,
   getTablesForRestaurant,
 } from "@/data/mockData";
 import { useAuthStore } from "@/store/authStore";
 import { useLiveOrdersStore } from "@/store/liveOrdersStore";
-import type { LiveOrderStatus, StaffRole } from "@/types";
+import { useMenuStore } from "@/store/menuStore";
+import { MenuItemEditor } from "@/components/owner/MenuItemEditor";
+import type { LiveOrderStatus, MenuItem, StaffRole } from "@/types";
 
 /**
  * Owner Dashboard — a read-only overview across the whole restaurant.
@@ -60,8 +62,14 @@ export function OwnerDashboard() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
   const orders = useLiveOrdersStore((s) => s.orders);
+  const allMenuItems = useMenuStore((s) => s.items);
+  const updateMenuItem = useMenuStore((s) => s.updateItem);
+  const addMenuItem = useMenuStore((s) => s.addItem);
 
   const restaurantId = currentUser!.restaurantId;
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MenuItem | undefined>(undefined);
 
   const restaurantOrders = useMemo(
     () => orders.filter((o) => o.restaurantId === restaurantId),
@@ -69,8 +77,29 @@ export function OwnerDashboard() {
   );
   const staff = useMemo(() => getStaffForRestaurant(restaurantId), [restaurantId]);
   const tables = useMemo(() => getTablesForRestaurant(restaurantId), [restaurantId]);
-  const menuItems = useMemo(() => getMenuItemsForRestaurant(restaurantId), [restaurantId]);
+  const menuItems = useMemo(
+    () => allMenuItems.filter((item) => item.restaurantId === restaurantId),
+    [allMenuItems, restaurantId]
+  );
   const categories = useMemo(() => getCategoriesForRestaurant(restaurantId), [restaurantId]);
+
+  function handleOpenAdd() {
+    setEditingItem(undefined);
+    setEditorOpen(true);
+  }
+
+  function handleOpenEdit(item: MenuItem) {
+    setEditingItem(item);
+    setEditorOpen(true);
+  }
+
+  function handleSaveItem(item: MenuItem) {
+    if (editingItem) {
+      updateMenuItem(item.id, item);
+    } else {
+      addMenuItem(item);
+    }
+  }
 
   const paidToday = restaurantOrders.filter((o) => o.isPaid);
   const revenueToday = paidToday.reduce((sum, o) => sum + o.grandTotal, 0);
@@ -182,28 +211,54 @@ export function OwnerDashboard() {
             </div>
           </section>
 
-          {/* Menu snapshot */}
+          {/* Menu management */}
           <section>
-            <h2 className="mb-3 font-display text-base font-semibold text-ink">Menu Snapshot</h2>
-            <div className="rounded-2xl border border-line bg-paper-raised p-4 shadow-card">
-              <div className="flex items-center gap-2 text-ink">
-                <UtensilsCrossed className="h-4 w-4 text-ink-faint" />
-                <span className="text-sm font-semibold">
-                  {menuItems.length} menu items across {categories.length} categories
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-ink-faint">
-                {menuItems.filter((m) => m.isAvailable).length} currently available ·{" "}
-                {menuItems.filter((m) => m.isBestSeller).length} marked best-seller
-              </p>
-              <p className="mt-4 text-xs text-ink-faint">
-                Menu editing and staff management are coming in a follow-up iteration — this
-                page is read-only for now.
-              </p>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-display text-base font-semibold text-ink">Menu</h2>
+              <Button size="sm" onClick={handleOpenAdd}>
+                <Plus className="h-4 w-4" /> Add item
+              </Button>
             </div>
+            {menuItems.length === 0 ? (
+              <EmptyState text="No menu items yet — add your first dish." />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {menuItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-2xl border border-line bg-paper-raised p-3 shadow-card"
+                  >
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-paper">
+                      {item.imageUrl ? (
+                        <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{item.name}</p>
+                      <p className="text-xs text-ink-faint">
+                        {formatINR(item.price)}
+                        {!item.isAvailable && " · Unavailable"}
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => handleOpenEdit(item)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </main>
+
+      <MenuItemEditor
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        restaurantId={restaurantId}
+        categories={categories}
+        item={editingItem}
+        onSave={handleSaveItem}
+      />
     </div>
   );
 }
