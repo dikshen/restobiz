@@ -11,6 +11,33 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
+// Shared sequence guard. Both the explicit login() call and the
+// onAuthStateChange listener independently resolve "who is the current
+// staff user", each with its own async fetch. Without this guard, a
+// stale fetch (e.g. from a leftover previous session) can occasionally
+// finish AFTER a newer one and silently overwrite the correct user with
+// the wrong role — which looked like "sometimes shows the wrong
+// dashboard until I refresh." Every resolution bumps the counter and
+// only applies its result if it's still the most recent one requested,
+// so a late, stale response is discarded instead of winning the race.
+let requestSeq = 0;
+
+async function resolveAndApplyUser(
+  userId: string | null,
+  set: (partial: Partial<AuthState>) => void
+): Promise<StaffUser | null> {
+  const myRequestId = ++requestSeq;
+  if (!userId) {
+    set({ currentUser: null });
+    return null;
+  }
+  const staff = await fetchStaffUserById(userId);
+  if (myRequestId === requestSeq) {
+    set({ currentUser: staff });
+  }
+  return staff;
+}
+
 /**
  * Real Supabase Auth session. Supabase's client already persists the
  * session token itself (no zustand `persist` middleware needed here) —
@@ -27,12 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   init: () => {
     let firstEventHandled = false;
     supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const staff = await fetchStaffUserById(session.user.id);
-        set({ currentUser: staff });
-      } else {
-        set({ currentUser: null });
-      }
+      await resolveAndApplyUser(session?.user?.id ?? null, set);
       if (!firstEventHandled) {
         firstEventHandled = true;
         set({ isInitializing: false });
@@ -45,12 +67,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (error || !data.user) {
       return { success: false, message: "Incorrect email or password." };
     }
-    const staff = await fetchStaffUserById(data.user.id);
+    const staff = await resolveAndApplyUser(data.user.id, set);
     if (!staff) {
       await supabase.auth.signOut();
       return { success: false, message: "No staff profile found for this account." };
     }
-    set({ currentUser: staff });
     return { success: true, message: "Logged in." };
   },
 
