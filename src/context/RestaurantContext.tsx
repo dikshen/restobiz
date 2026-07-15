@@ -1,12 +1,14 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import {
-  getCategoriesForRestaurant,
-  getCouponsForRestaurant,
-  getRestaurantBySlug,
-  getTablesForRestaurant,
-} from "@/data/mockData";
-import { useMenuStore } from "@/store/menuStore";
+  fetchCategoriesForRestaurant,
+  fetchCouponsForRestaurant,
+  fetchMenuItemsForRestaurant,
+  fetchRestaurantBySlug,
+  fetchTablesForRestaurant,
+  mapMenuItem,
+} from "@/lib/db";
+import { supabase } from "@/lib/supabaseClient";
 import type { Category, Coupon, MenuItem, Restaurant, RestaurantTable } from "@/types";
 
 interface RestaurantScope {
@@ -33,30 +35,97 @@ export function useRestaurant(): RestaurantScope {
 }
 
 /**
- * Resolves the `:slug` URL param to a restaurant ONCE, then provides its
- * scoped categories/menuItems/tables/coupons to every nested route via
- * context. This is the seam where a real Supabase query (scoped by
- * restaurant_id, protected by RLS) will slot in later — no page
- * component below this layout needs to change when that happens.
+ * Resolves the `:slug` URL param to a restaurant via a real Supabase
+ * query, then loads its scoped categories/menuItems/tables/coupons —
+ * this is the seam that used to call mockData.ts synchronously and now
+ * hits Postgres instead. No page below this layout needed to change.
+ *
+ * Also subscribes to realtime changes on menu_items for this restaurant,
+ * so an owner's edit (price, availability, a new dish) shows up on an
+ * already-open guest menu page without a refresh.
  */
 export function RestaurantScopeLayout() {
   const { slug } = useParams<{ slug: string }>();
-  const allMenuItems = useMenuStore((s) => s.items);
+  const [scope, setScope] = useState<RestaurantScope | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "not-found" | "error">("loading");
 
-  const scope = useMemo<RestaurantScope | null>(() => {
-    if (!slug) return null;
-    const restaurant = getRestaurantBySlug(slug);
-    if (!restaurant) return null;
-    return {
-      restaurant,
-      categories: getCategoriesForRestaurant(restaurant.id),
-      menuItems: allMenuItems.filter((item) => item.restaurantId === restaurant.id),
-      tables: getTablesForRestaurant(restaurant.id),
-      coupons: getCouponsForRestaurant(restaurant.id),
+  useEffect(() => {
+    let cancelled = false;
+    if (!slug) {
+      setStatus("not-found");
+      return;
+    }
+
+    setStatus("loading");
+    fetchRestaurantBySlug(slug)
+      .then(async (restaurant) => {
+        if (cancelled) return;
+        if (!restaurant) {
+          setStatus("not-found");
+          return;
+        }
+        const [categories, menuItems, tables, coupons] = await Promise.all([
+          fetchCategoriesForRestaurant(restaurant.id),
+          fetchMenuItemsForRestaurant(restaurant.id),
+          fetchTablesForRestaurant(restaurant.id),
+          fetchCouponsForRestaurant(restaurant.id),
+        ]);
+        if (cancelled) return;
+        setScope({ restaurant, categories, menuItems, tables, coupons });
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
     };
-  }, [slug, allMenuItems]);
+  }, [slug]);
 
-  if (!scope) {
+  // Realtime: keep menuItems in sync with owner edits while this page
+  // stays open.
+  useEffect(() => {
+    if (!scope) return;
+    const channel = supabase
+      .channel(`menu-items-${scope.restaurant.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "menu_items", filter: `restaurant_id=eq.${scope.restaurant.id}` },
+        (payload) => {
+          setScope((prev) => {
+            if (!prev) return prev;
+            if (payload.eventType === "DELETE") {
+              return { ...prev, menuItems: prev.menuItems.filter((m) => m.id !== payload.old.id) };
+            }
+            const updated = mapMenuItem(payload.new);
+            const exists = prev.menuItems.some((m) => m.id === updated.id);
+            return {
+              ...prev,
+              menuItems: exists
+                ? prev.menuItems.map((m) => (m.id === updated.id ? updated : m))
+                : [...prev.menuItems, updated],
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope?.restaurant.id]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper">
+        <p className="text-sm text-ink-faint">Loading menu…</p>
+      </div>
+    );
+  }
+
+  if (status !== "ready" || !scope) {
     return <RestaurantNotFound slug={slug} />;
   }
 

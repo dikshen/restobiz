@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { useLiveOrdersStore } from "@/store/liveOrdersStore";
+import { useStaffRestaurant } from "@/hooks/useStaffRestaurant";
 import type { LiveOrder, LiveOrderStatus } from "@/types";
 
 /**
@@ -71,6 +72,7 @@ export function ChefDashboard() {
   const updateStatus = useLiveOrdersStore((s) => s.updateStatus);
 
   const restaurantId = currentUser!.restaurantId;
+  const restaurant = useStaffRestaurant(restaurantId);
 
   const restaurantOrders = useMemo(
     () => orders.filter((o) => o.restaurantId === restaurantId),
@@ -168,7 +170,7 @@ export function ChefDashboard() {
             <div>
               <h1 className="font-display text-lg font-semibold text-ink">Kitchen Display</h1>
               <p className="text-xs text-ink-faint">
-                {currentUser?.name} · {restaurantId === "rest_001" ? "Spice Route Kitchen" : "Bombay Brew Café"}
+                {currentUser?.name} · {restaurant?.name ?? "…"}
               </p>
             </div>
           </div>

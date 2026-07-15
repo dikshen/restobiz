@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ChefHat, LogIn } from "lucide-react";
+import { ChefHat, LogIn, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/authStore";
@@ -24,10 +24,20 @@ export function StaffLoginPage() {
   const location = useLocation();
   const login = useAuthStore((s) => s.login);
   const currentUser = useAuthStore((s) => s.currentUser);
+  const isInitializing = useAuthStore((s) => s.isInitializing);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (isInitializing) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper">
+        <p className="text-sm text-ink-faint">Loading…</p>
+      </div>
+    );
+  }
 
   // Already signed in — send them straight to their dashboard (or back
   // to whatever protected page redirected them here).
@@ -36,14 +46,21 @@ export function StaffLoginPage() {
     return <Navigate to={from ?? ROLE_HOME[currentUser.role]} replace />;
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const result = login(email, password);
+  async function attemptLogin(loginEmail: string, loginPassword: string) {
+    setError(null);
+    setIsSubmitting(true);
+    const result = await login(loginEmail, loginPassword);
+    setIsSubmitting(false);
     if (!result.success) {
       setError(result.message);
     }
     // On success the component re-renders and the currentUser branch
     // above handles the redirect.
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    attemptLogin(email, password);
   }
 
   return (
@@ -96,8 +113,9 @@ export function StaffLoginPage() {
 
           {error && <p className="text-xs font-medium text-nonveg">{error}</p>}
 
-          <Button type="submit" size="lg" className="mt-2 w-full">
-            <LogIn className="h-4 w-4" /> Sign in
+          <Button type="submit" size="lg" className="mt-2 w-full" disabled={isSubmitting}>
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+            Sign in
           </Button>
         </form>
 
@@ -119,7 +137,8 @@ export function StaffLoginPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => login(demo.email, demo.password)}
+                disabled={isSubmitting}
+                onClick={() => attemptLogin(demo.email, demo.password)}
               >
                 {demo.label}
               </Button>

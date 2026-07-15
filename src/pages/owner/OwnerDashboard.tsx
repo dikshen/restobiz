@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardList,
   IndianRupee,
@@ -12,25 +12,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
-import {
-  getCategoriesForRestaurant,
-  getStaffForRestaurant,
-  getTablesForRestaurant,
-} from "@/data/mockData";
+import { fetchCategoriesForRestaurant, fetchStaffForRestaurant, fetchTablesForRestaurant } from "@/lib/db";
 import { useAuthStore } from "@/store/authStore";
 import { useLiveOrdersStore } from "@/store/liveOrdersStore";
 import { useMenuStore } from "@/store/menuStore";
+import { useStaffRestaurant } from "@/hooks/useStaffRestaurant";
 import { MenuItemEditor } from "@/components/owner/MenuItemEditor";
-import type { LiveOrderStatus, MenuItem, StaffRole } from "@/types";
+import type { Category, LiveOrderStatus, MenuItem, RestaurantTable, StaffRole, StaffUser } from "@/types";
 
 /**
- * Owner Dashboard — a read-only overview across the whole restaurant.
- * Unlike Waiter/Chef, the owner doesn't act on individual orders; this
- * page reads from the same useLiveOrdersStore and the same scoped
- * mockData fetchers (getStaffForRestaurant, getTablesForRestaurant,
- * getMenuItemsForRestaurant, getCategoriesForRestaurant), scoped by
- * currentUser.restaurantId exactly like Waiter and Chef. No new data
- * concepts introduced — this page is a rollup of what already exists.
+ * Owner Dashboard — overview across the whole restaurant, backed by real
+ * Supabase data. Orders and menu items are realtime (via
+ * useLiveOrdersStore / useMenuStore); staff/tables/categories are fetched
+ * once per visit since they change far less often and don't need a live
+ * subscription for a first version.
  */
 
 const STATUS_LABEL: Record<LiveOrderStatus, string> = {
@@ -63,25 +58,35 @@ export function OwnerDashboard() {
   const logout = useAuthStore((s) => s.logout);
   const orders = useLiveOrdersStore((s) => s.orders);
   const allMenuItems = useMenuStore((s) => s.items);
+  const initMenu = useMenuStore((s) => s.init);
   const updateMenuItem = useMenuStore((s) => s.updateItem);
   const addMenuItem = useMenuStore((s) => s.addItem);
 
   const restaurantId = currentUser!.restaurantId;
+  const restaurant = useStaffRestaurant(restaurantId); // also starts live orders subscription
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | undefined>(undefined);
+
+  const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    initMenu(restaurantId);
+    fetchStaffForRestaurant(restaurantId).then(setStaff);
+    fetchTablesForRestaurant(restaurantId).then(setTables);
+    fetchCategoriesForRestaurant(restaurantId).then(setCategories);
+  }, [restaurantId, initMenu]);
 
   const restaurantOrders = useMemo(
     () => orders.filter((o) => o.restaurantId === restaurantId),
     [orders, restaurantId]
   );
-  const staff = useMemo(() => getStaffForRestaurant(restaurantId), [restaurantId]);
-  const tables = useMemo(() => getTablesForRestaurant(restaurantId), [restaurantId]);
   const menuItems = useMemo(
     () => allMenuItems.filter((item) => item.restaurantId === restaurantId),
     [allMenuItems, restaurantId]
   );
-  const categories = useMemo(() => getCategoriesForRestaurant(restaurantId), [restaurantId]);
 
   function handleOpenAdd() {
     setEditingItem(undefined);
@@ -128,7 +133,7 @@ export function OwnerDashboard() {
           <div>
             <h1 className="font-display text-lg font-semibold text-ink">Owner Overview</h1>
             <p className="text-xs text-ink-faint">
-              {currentUser?.name} · {restaurantId === "rest_001" ? "Spice Route Kitchen" : "Bombay Brew Café"}
+              {currentUser?.name} · {restaurant?.name ?? "…"}
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={logout}>

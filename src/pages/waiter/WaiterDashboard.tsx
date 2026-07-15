@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CheckCircle2,
@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatINR } from "@/lib/utils";
-import { getTablesForRestaurant } from "@/data/mockData";
+import { fetchTablesForRestaurant } from "@/lib/db";
 import { useAuthStore } from "@/store/authStore";
 import { useLiveOrdersStore } from "@/store/liveOrdersStore";
-import type { LiveOrder, LiveOrderStatus } from "@/types";
+import { useStaffRestaurant } from "@/hooks/useStaffRestaurant";
+import type { LiveOrder, LiveOrderStatus, RestaurantTable } from "@/types";
 
 const STATUS_FLOW: LiveOrderStatus[] = ["new", "accepted", "preparing", "ready", "served"];
 
@@ -56,8 +57,12 @@ export function WaiterDashboard() {
   const [kitchenCalled, setKitchenCalled] = useState<Record<string, boolean>>({});
 
   const restaurantId = currentUser!.restaurantId;
+  const restaurant = useStaffRestaurant(restaurantId);
 
-  const tables = useMemo(() => getTablesForRestaurant(restaurantId), [restaurantId]);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  useEffect(() => {
+    fetchTablesForRestaurant(restaurantId).then(setTables);
+  }, [restaurantId]);
   const restaurantOrders = useMemo(
     () => orders.filter((o) => o.restaurantId === restaurantId),
     [orders, restaurantId]
@@ -109,7 +114,7 @@ export function WaiterDashboard() {
           <div>
             <h1 className="font-display text-lg font-semibold text-ink">Waiter Dashboard</h1>
             <p className="text-xs text-ink-faint">
-              {currentUser?.name} · {restaurantId === "rest_001" ? "Spice Route Kitchen" : "Bombay Brew Café"}
+              {currentUser?.name} · {restaurant?.name ?? "…"}
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={logout}>

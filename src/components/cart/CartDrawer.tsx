@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, Tag, ShoppingBag } from "lucide-react";
+import { Minus, Plus, Trash2, Tag, ShoppingBag, Loader2 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,8 @@ export function CartDrawer() {
 
   const [couponInput, setCouponInput] = useState("");
   const [couponMessage, setCouponMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   function handleApplyCoupon() {
     const match = getCouponByCode(coupons, couponInput);
@@ -49,8 +51,9 @@ export function CartDrawer() {
     setCouponMessage({ text: result.message, ok: result.success });
   }
 
-  function handlePlaceOrder() {
-    if (items.length === 0 || tableNumber === null) return;
+  async function handlePlaceOrder() {
+    if (items.length === 0 || tableNumber === null || isPlacingOrder) return;
+    setOrderError(null);
     const prefix = restaurant.slug.slice(0, 2).toUpperCase();
     const orderNumber = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
     const orderId =
@@ -79,7 +82,16 @@ export function CartDrawer() {
       grandTotal,
       isPaid: false,
     };
-    addLiveOrder(liveOrder);
+
+    setIsPlacingOrder(true);
+    try {
+      await addLiveOrder(liveOrder);
+    } catch (err) {
+      setIsPlacingOrder(false);
+      setOrderError("Couldn't place your order — please check your connection and try again.");
+      return;
+    }
+    setIsPlacingOrder(false);
 
     closeCart();
     navigate("/order-success", {
@@ -238,9 +250,24 @@ export function CartDrawer() {
                   <dd className="font-mono tabular">{formatINR(grandTotal)}</dd>
                 </div>
               </dl>
+              {orderError && (
+                <p className="pt-2 text-center text-xs font-medium text-nonveg">{orderError}</p>
+              )}
               <div className="py-4">
-                <Button variant="accent" size="lg" className="w-full" onClick={handlePlaceOrder}>
-                  Place Order · {formatINR(grandTotal)}
+                <Button
+                  variant="accent"
+                  size="lg"
+                  className="w-full"
+                  onClick={handlePlaceOrder}
+                  disabled={isPlacingOrder}
+                >
+                  {isPlacingOrder ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
+                    </>
+                  ) : (
+                    <>Place Order · {formatINR(grandTotal)}</>
+                  )}
                 </Button>
               </div>
             </div>

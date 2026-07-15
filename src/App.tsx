@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { MenuPage } from "@/pages/MenuPage";
 import { ProductPage } from "@/pages/ProductPage";
@@ -9,18 +10,22 @@ import { ChefDashboard } from "@/pages/chef/ChefDashboard";
 import { OwnerDashboard } from "@/pages/owner/OwnerDashboard";
 import { RestaurantScopeLayout } from "@/context/RestaurantContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { restaurants } from "@/data/mockData";
+import { useAuthStore } from "@/store/authStore";
 
 function DemoHome() {
   // Convenience landing route for local dev — a real QR code points
-  // straight at /menu/:slug/:tableParam. Defaults to the first demo
-  // restaurant; try /menu/bombay-brew-cafe/table-3 to see a second,
-  // fully isolated restaurant on the same running app.
-  const demo = restaurants[0];
-  return <Navigate to={`/menu/${demo.slug}/table-5`} replace />;
+  // straight at /menu/:slug/:tableParam. Try /menu/bombay-brew-cafe/table-3
+  // to see the second, fully isolated restaurant on the same running app.
+  return <Navigate to="/menu/spice-route/table-5" replace />;
 }
 
 function App() {
+  const initAuth = useAuthStore((s) => s.init);
+
+  useEffect(() => {
+    initAuth();
+  }, [initAuth]);
+
   return (
     <Routes>
       <Route path="/" element={<DemoHome />} />

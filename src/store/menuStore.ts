@@ -1,34 +1,75 @@
 import { create } from "zustand";
-import { menuItems as seedMenuItems } from "@/data/mockData";
+import { supabase } from "@/lib/supabaseClient";
+import { fetchMenuItemsForRestaurant, insertMenuItem, updateMenuItemRow, mapMenuItem } from "@/lib/db";
 import type { MenuItem } from "@/types";
 
 interface MenuState {
   items: MenuItem[];
-  getItemsForRestaurant: (restaurantId: string) => MenuItem[];
-  updateItem: (id: string, updates: Partial<MenuItem>) => void;
-  addItem: (item: MenuItem) => void;
+  subscribedRestaurantId: string | null;
+  init: (restaurantId: string) => Promise<void>;
+  updateItem: (id: string, updates: Partial<MenuItem>) => Promise<void>;
+  addItem: (item: MenuItem) => Promise<void>;
 }
 
+let activeChannel: ReturnType<typeof supabase.channel> | null = null;
+
 /**
- * Runtime-mutable menu item state, seeded from the mock data — same
- * pattern as useLiveOrdersStore. Kept separate from mockData.ts so owner
- * edits (name, price, description, image, availability) don't mutate the
- * static seed module itself. RestaurantContext reads menuItems from here
- * instead of calling the mockData fetcher directly, so a guest's menu
- * page re-renders the moment an owner saves a change, within the same
- * session. This is the seam that becomes a real Supabase `menu_items`
- * table + mutation later — only this store's internals change.
+ * Real Supabase-backed menu item state for the Owner Dashboard's menu
+ * editor. Same pattern as useLiveOrdersStore: init() fetches once and
+ * opens a realtime subscription, writes go straight to Postgres and let
+ * the realtime event update local state — so an edit made here also
+ * shows up on RestaurantContext's own separate menu_items subscription
+ * (used by the guest-facing menu) without any direct coupling between
+ * the two.
  */
 export const useMenuStore = create<MenuState>((set, get) => ({
-  items: seedMenuItems,
+  items: [],
+  subscribedRestaurantId: null,
 
-  getItemsForRestaurant: (restaurantId) =>
-    get().items.filter((item) => item.restaurantId === restaurantId),
+  init: async (restaurantId) => {
+    if (get().subscribedRestaurantId === restaurantId) return;
 
-  updateItem: (id, updates) =>
-    set((state) => ({
-      items: state.items.map((item) => (item.id === id ? { ...item, ...updates } : item)),
-    })),
+    if (activeChannel) {
+      supabase.removeChannel(activeChannel);
+      activeChannel = null;
+    }
 
-  addItem: (item) => set((state) => ({ items: [...state.items, item] })),
+    const items = await fetchMenuItemsForRestaurant(restaurantId);
+    set({ items, subscribedRestaurantId: restaurantId });
+
+    activeChannel = supabase
+      .channel(`menu-items-owner-${restaurantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "menu_items",
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        (payload) => {
+          set((state) => {
+            if (payload.eventType === "DELETE") {
+              return { items: state.items.filter((m) => m.id !== (payload.old as any).id) };
+            }
+            const updated = mapMenuItem(payload.new);
+            const exists = state.items.some((m) => m.id === updated.id);
+            return {
+              items: exists
+                ? state.items.map((m) => (m.id === updated.id ? updated : m))
+                : [...state.items, updated],
+            };
+          });
+        }
+      )
+      .subscribe();
+  },
+
+  updateItem: async (id, updates) => {
+    await updateMenuItemRow(id, updates);
+  },
+
+  addItem: async (item) => {
+    await insertMenuItem(item);
+  },
 }));
