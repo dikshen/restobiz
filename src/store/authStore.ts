@@ -22,6 +22,23 @@ interface AuthState {
 // so a late, stale response is discarded instead of winning the race.
 let requestSeq = 0;
 
+async function fetchStaffUserWithRetry(userId: string): Promise<StaffUser | null> {
+  // A page refresh never hits this problem because the session is
+  // already fully established. A *fresh* sign-in occasionally does,
+  // because there's a brief window right after signInWithPassword()
+  // resolves where the new session hasn't fully propagated for RLS
+  // purposes yet, so the very first staff_users lookup can come back
+  // empty. Retry a couple of times with a short delay before concluding
+  // there's genuinely no profile, rather than treating a timing hiccup
+  // as "logged in as the wrong role" or "no account found."
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const staff = await fetchStaffUserById(userId);
+    if (staff) return staff;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+  }
+  return null;
+}
+
 async function resolveAndApplyUser(
   userId: string | null,
   set: (partial: Partial<AuthState>) => void
@@ -31,7 +48,7 @@ async function resolveAndApplyUser(
     set({ currentUser: null });
     return null;
   }
-  const staff = await fetchStaffUserById(userId);
+  const staff = await fetchStaffUserWithRetry(userId);
   if (myRequestId === requestSeq) {
     set({ currentUser: staff });
   }
@@ -63,6 +80,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   login: async (email, password) => {
+    // Force a clean slate before signing in — if there's already an
+    // active session (e.g. switching roles via quick-login without
+    // logging out first), sign it out fully first. This removes any
+    // chance of a leftover session/listener still resolving in the
+    // background during the new sign-in, rather than just tolerating it
+    // via the sequence guard above.
+    await supabase.auth.signOut();
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.user) {
       return { success: false, message: "Incorrect email or password." };

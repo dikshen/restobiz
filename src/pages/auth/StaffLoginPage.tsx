@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChefHat, LogIn, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ const QUICK_LOGINS: { label: string; email: string; password: string }[] = [
 ];
 
 export function StaffLoginPage() {
-  const location = useLocation();
   const login = useAuthStore((s) => s.login);
   const currentUser = useAuthStore((s) => s.currentUser);
   const isInitializing = useAuthStore((s) => s.isInitializing);
@@ -39,11 +38,16 @@ export function StaffLoginPage() {
     );
   }
 
-  // Already signed in — send them straight to their dashboard (or back
-  // to whatever protected page redirected them here).
+  // Already signed in — send them straight to their own dashboard.
+  // Deliberately ignoring any leftover "return to" location here: that
+  // value was attached by ProtectedRoute for whoever was logged in
+  // *before* this sign-in, and can point at a page the newly logged-in
+  // role isn't allowed to see (e.g. logging out of Owner, then quick
+  // logging in as Chef, would otherwise try to send you back to /owner
+  // and get bounced to /coming-soon). This page's own login always
+  // resolves to the current user's actual home.
   if (currentUser) {
-    const from = (location.state as { from?: string } | null)?.from;
-    return <Navigate to={from ?? ROLE_HOME[currentUser.role]} replace />;
+    return <Navigate to={ROLE_HOME[currentUser.role]} replace />;
   }
 
   async function attemptLogin(loginEmail: string, loginPassword: string) {
