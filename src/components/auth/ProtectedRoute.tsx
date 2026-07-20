@@ -34,6 +34,12 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   }
 
   if (!allowedRoles.includes(currentUser.role)) {
+    console.warn("[ProtectedRoute] redirecting to /coming-soon", {
+      path: location.pathname,
+      currentUserRole: currentUser.role,
+      currentUserName: currentUser.name,
+      allowedRoles,
+    });
     return <Navigate to="/coming-soon" replace />;
   }
 

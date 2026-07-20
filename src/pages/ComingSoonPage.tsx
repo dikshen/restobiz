@@ -24,6 +24,9 @@ export function ComingSoonPage() {
         {currentUser?.name ? `You're signed in as ${currentUser.name}. ` : ""}
         This role's dashboard hasn't been built yet — it's next up on the roadmap.
       </p>
+      <p className="font-mono text-xs text-ink-faint/60">
+        (debug: reached via {window.location.pathname})
+      </p>
       <Button variant="outline" onClick={logout} className="mt-2">
         Log out
       </Button>
